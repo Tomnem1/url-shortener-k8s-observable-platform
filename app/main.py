@@ -47,6 +47,11 @@ class ShortenRequest(BaseModel):
 
 @app.get("/health")
 def health():
+    return {"status": "ok"}
+
+
+@app.get("/ready")
+def ready():
     try:
         with get_connection() as conn:
             conn.execute("SELECT 1")

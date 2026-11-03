@@ -23,13 +23,31 @@ def test_health(client):
     assert response.json() == {"status": "ok"}
 
 
-def test_health_database_unreachable(client, monkeypatch):
+def test_health_ignores_database(client, monkeypatch):
     def broken_connection():
         raise psycopg.OperationalError("database is down")
 
     monkeypatch.setattr("app.main.get_connection", broken_connection)
 
     response = client.get("/health")
+
+    assert response.status_code == 200
+    assert response.json() == {"status": "ok"}
+
+
+def test_ready(client):
+    response = client.get("/ready")
+    assert response.status_code == 200
+    assert response.json() == {"status": "ok"}
+
+
+def test_ready_database_unreachable(client, monkeypatch):
+    def broken_connection():
+        raise psycopg.OperationalError("database is down")
+
+    monkeypatch.setattr("app.main.get_connection", broken_connection)
+
+    response = client.get("/ready")
 
     assert response.status_code == 503
     assert response.json() == {"status": "error", "database": "unreachable"}
