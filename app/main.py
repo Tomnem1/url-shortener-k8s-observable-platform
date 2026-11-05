@@ -6,6 +6,7 @@ from contextlib import asynccontextmanager
 import psycopg
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse, RedirectResponse
+from prometheus_fastapi_instrumentator import Instrumentator
 from pydantic import BaseModel
 
 CREATE_TABLE_SQL = """
@@ -27,7 +28,30 @@ async def lifespan(app: FastAPI):
     yield
 
 
+LATENCY_BUCKETS = (
+    0.001,
+    0.0025,
+    0.005,
+    0.01,
+    0.025,
+    0.05,
+    0.1,
+    0.25,
+    0.5,
+    1,
+    2.5,
+    5,
+    10,
+)
+
 app = FastAPI(lifespan=lifespan)
+Instrumentator(
+    excluded_handlers=["^/metrics$", "^/health$", "^/ready$"],
+).instrument(
+    app,
+    latency_lowr_buckets=LATENCY_BUCKETS,
+    latency_highr_buckets=LATENCY_BUCKETS,
+).expose(app)
 
 ALPHABET = string.ascii_letters + string.digits
 CODE_LENGTH = 6
