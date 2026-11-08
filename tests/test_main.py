@@ -1,6 +1,7 @@
 import psycopg
 import pytest
 from fastapi.testclient import TestClient
+from prometheus_client import REGISTRY
 
 from app.main import app, get_connection
 
@@ -23,7 +24,7 @@ def test_health(client):
     assert response.json() == {"status": "ok"}
 
 
-def test_health_database_unreachable(client, monkeypatch):
+def test_health_ignores_database(client, monkeypatch):
     def broken_connection():
         raise psycopg.OperationalError("database is down")
 
@@ -31,8 +32,67 @@ def test_health_database_unreachable(client, monkeypatch):
 
     response = client.get("/health")
 
+    assert response.status_code == 200
+    assert response.json() == {"status": "ok"}
+
+
+def test_ready(client):
+    response = client.get("/ready")
+    assert response.status_code == 200
+    assert response.json() == {"status": "ok"}
+
+
+def test_ready_database_unreachable(client, monkeypatch):
+    def broken_connection():
+        raise psycopg.OperationalError("database is down")
+
+    monkeypatch.setattr("app.main.get_connection", broken_connection)
+
+    response = client.get("/ready")
+
     assert response.status_code == 503
     assert response.json() == {"status": "error", "database": "unreachable"}
+
+
+def test_metrics_endpoint(client):
+    response = client.get("/metrics")
+    assert response.status_code == 200
+    assert "http_requests_total" in response.text
+
+
+def test_metrics_counts_user_requests(client):
+    labels = {"handler": "/{code}", "method": "GET", "status": "4xx"}
+    before = REGISTRY.get_sample_value("http_requests_total", labels) or 0
+
+    client.get("/abc123")
+
+    after = REGISTRY.get_sample_value("http_requests_total", labels)
+    assert after - before == 1
+
+
+def test_metrics_ignore_probes(client):
+    client.get("/health")
+    client.get("/ready")
+
+    health = {"handler": "/health", "method": "GET", "status": "2xx"}
+    ready = {"handler": "/ready", "method": "GET", "status": "2xx"}
+    assert REGISTRY.get_sample_value("http_requests_total", health) is None
+    assert REGISTRY.get_sample_value("http_requests_total", ready) is None
+
+
+def test_metrics_fine_buckets(client):
+    client.get("/abc123")
+
+    lowr = {"handler": "/{code}", "method": "GET", "le": "0.001"}
+    highr = {"le": "0.001"}
+    assert (
+        REGISTRY.get_sample_value("http_request_duration_seconds_bucket", lowr)
+        is not None
+    )
+    assert (
+        REGISTRY.get_sample_value("http_request_duration_highr_seconds_bucket", highr)
+        is not None
+    )
 
 
 def test_shorten_creates_link(client):
