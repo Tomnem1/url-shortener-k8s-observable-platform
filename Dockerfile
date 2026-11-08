@@ -1,4 +1,7 @@
 FROM python:3.12-slim
+RUN apt-get update \
+    && apt-get upgrade -y \
+    && rm -rf /var/lib/apt/lists/*
 RUN useradd --uid 10001 --no-create-home --shell /usr/sbin/nologin nonroot
 WORKDIR /containerized-url-shortener
 COPY ./requirements.txt /containerized-url-shortener/
